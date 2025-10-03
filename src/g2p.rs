@@ -5,7 +5,6 @@ use llama_cpp_2::model::params::LlamaModelParams;
 use llama_cpp_2::model::LlamaModel;
 use llama_cpp_2::model::AddBos;
 use llama_cpp_2::sampling::LlamaSampler;
-use std::env;
 
 pub struct G2p {
     backend: LlamaBackend,
