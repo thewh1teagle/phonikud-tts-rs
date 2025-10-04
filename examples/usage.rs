@@ -26,7 +26,7 @@ fn main() -> Result<()> {
     let text = "שלום עולם! מה קורה? האם תצליח לדבר בעברית?";
 
     let mut tts = Tts::new(tts_model_path, tts_config_path)?;
-    let g2p = G2p::new(g2p_model_path);
+    let mut g2p = G2p::new(g2p_model_path);
     let phonemes = g2p.g2p(&text);
     println!("Phonemes: {}", phonemes);
     let (samples, sample_rate) = tts.create(phonemes)?;

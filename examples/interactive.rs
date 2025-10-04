@@ -31,7 +31,7 @@ fn play_audio(audio_path: &str) {
 fn main() -> Result<()> {
     println!("Loading models from embedded bytes...");
     let mut tts = Tts::new("model.onnx".to_string(), "model.config.json".to_string()    )?;
-    let g2p = G2p::new("model.gguf".to_string());
+    let mut g2p = G2p::new("model.gguf".to_string());
     println!("Models loaded successfully!");
     println!();
     

@@ -1,4 +1,17 @@
-use std::path::PathBuf;
+/*
+Standalone example with embedded model and tokenizer.
+This embeds the ONNX model and tokenizer directly into the binary.
+
+Build:
+export SDKROOT=$(xcrun --show-sdk-path)
+cargo build --release --example usage_g2p_standalone
+
+Run:
+./target/release/examples/usage_g2p_standalone
+
+The compiled binary will be completely standalone and won't need external model files!
+*/
+
 use ort::{
     inputs,
     session::{Session, builder::GraphOptimizationLevel},
@@ -8,7 +21,11 @@ use ndarray::{Array2, Array4, Ix4};
 use tokenizers::Tokenizer;
 use anyhow::{Result, Context};
 
-pub struct G2p {
+// Embed the model and tokenizer directly into the binary
+const EMBEDDED_MODEL: &[u8] = include_bytes!("../../gemma3_onnx/model.onnx");
+const EMBEDDED_TOKENIZER: &[u8] = include_bytes!("../../gemma3_onnx/tokenizer.json");
+
+struct G2pStandalone {
     session: Session,
     tokenizer: Tokenizer,
     num_layers: usize,
@@ -16,25 +33,21 @@ pub struct G2p {
     head_dim: usize,
 }
 
-impl G2p {
-    pub fn new(model_dir: String) -> Self {
-        let model_dir_path = PathBuf::from(&model_dir);
-        
-        // Load the ONNX model
-        let model_path = model_dir_path.join("model.onnx");
+impl G2pStandalone {
+    fn new() -> Self {
+        // Load ONNX model from embedded bytes
         let session = Session::builder()
             .expect("Failed to create session builder")
             .with_optimization_level(GraphOptimizationLevel::Level1)
             .expect("Failed to set optimization level")
             .with_intra_threads(1)
             .expect("Failed to set intra threads")
-            .commit_from_file(&model_path)
-            .expect(&format!("Failed to load model from {:?}", model_path));
+            .commit_from_memory(EMBEDDED_MODEL)
+            .expect("Failed to load model from memory");
         
-        // Load the tokenizer
-        let tokenizer_path = model_dir_path.join("tokenizer.json");
-        let tokenizer = Tokenizer::from_file(&tokenizer_path)
-            .expect(&format!("Failed to load tokenizer from {:?}", tokenizer_path));
+        // Load tokenizer from embedded bytes
+        let tokenizer = Tokenizer::from_bytes(EMBEDDED_TOKENIZER)
+            .expect("Failed to load tokenizer from memory");
         
         // Model config from config.json
         let num_layers = 18;
@@ -50,7 +63,7 @@ impl G2p {
         }
     }
 
-    pub fn g2p(&mut self, text: &str) -> String {
+    fn g2p(&mut self, text: &str) -> String {
         self.generate(text).expect("Failed to generate phonemes")
     }
 
@@ -71,15 +84,13 @@ impl G2p {
         let tokens_vec: Vec<i64> = encoding.get_ids().iter().map(|id| *id as i64).collect();
         
         let max_tokens = 150;
-        let eos_token_id = 1i64; // From config.json
+        let eos_token_id = 1i64;
         let end_of_turn_encoding = self.tokenizer.encode("<end_of_turn>", false).unwrap();
         let end_of_turn_token = end_of_turn_encoding.get_ids()[0] as i64;
         
         let mut generated_tokens = Vec::new();
         
         // Initialize past_key_values for the transformer model
-        // Each element is a 4D array with dimensions: [batch_size, num_heads, seq_len, head_dim]
-        // We have 18 layers * 2 (key + value) = 36 elements
         let mut past_key_values: Vec<Array4<f32>> = vec![
             Array4::zeros((1, self.num_key_value_heads, 0, self.head_dim)); 
             self.num_layers * 2
@@ -95,10 +106,8 @@ impl G2p {
             
             // Prepare position_ids tensor [batch_size, sequence_length]
             let position_ids: Vec<i64> = if past_key_values[0].shape()[2] == 0 {
-                // First iteration: position_ids from 0 to seq_len
                 (0..seq_len).collect()
             } else {
-                // Subsequent iterations: just the next position
                 vec![past_key_values[0].shape()[2] as i64]
             };
             let position_ids_array = Array2::from_shape_vec((1, position_ids.len()), position_ids)?;
@@ -182,3 +191,21 @@ impl G2p {
         Ok(response.trim().to_string())
     }
 }
+
+fn main() {
+    println!("Loading embedded model...");
+    let mut g2p = G2pStandalone::new();
+    
+    let text = "שלום עולם! מה קורה?";
+    println!("Input: {}", text);
+    
+    let phonemes = g2p.g2p(text);
+    println!("Phonemes: {}", phonemes);
+    
+    // Try another example
+    let text2 = "תודה רבה";
+    println!("\nInput: {}", text2);
+    let phonemes2 = g2p.g2p(text2);
+    println!("Phonemes: {}", phonemes2);
+}
+
